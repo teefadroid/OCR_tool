@@ -1,0 +1,34 @@
+# PharmOCR — Python dependencies
+# Python 3.10+
+
+# --- Document ingestion ---
+pdf2image>=1.17.0          # PDF → image via Poppler
+Pillow>=10.0.0             # Image I/O and manipulation
+opencv-python>=4.8.0       # Deskew, denoise, CLAHE
+numpy>=1.24.0
+
+# --- OCR model clients ---
+requests>=2.31.0           # Ollama HTTP API
+
+# --- Layout / PDF output ---
+PyMuPDF>=1.23.0            # Searchable PDF text overlay (import fitz)
+
+# --- Post-processing ---
+python-bidi>=0.4.2         # Arabic/Hebrew BiDi reordering algorithm
+arabic-reshaper>=3.0.0     # Arabic character reshaping for correct display
+rapidFuzz>=3.5.0           # Fuzzy drug name / INN matching
+chardet>=5.2.0             # Encoding detection (for legacy PDF metadata)
+
+# --- API ---
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9    # File upload support in FastAPI
+
+# --- CLI ---
+typer[all]>=0.12.0
+rich>=13.7.0               # Pretty console output
+
+# --- Testing ---
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+httpx>=0.27.0              # FastAPI test client

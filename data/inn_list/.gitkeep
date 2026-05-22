@@ -1,0 +1,3 @@
+# Place who_inn.csv here.
+# Download from: https://www.who.int/teams/health-product-and-policy-standards/inn/inn-lists
+# Expected format: one INN per row in the first column (CSV or plain text)
