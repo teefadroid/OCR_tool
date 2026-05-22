@@ -1,0 +1,40 @@
+# Ollama Modelfile for the GLM-OCR base model (English / Latin OCR)
+#
+# Usage:
+#   1. Pull the published model from the Ollama registry directly (preferred):
+#        ollama pull glm-ocr
+#
+#   2. Or, if you have a local GGUF/safetensors checkpoint and want a custom
+#      system prompt tuned for pharmaceutical leaflets, build from this
+#      Modelfile:
+#        ollama create glm-ocr-pharma -f ollama/Modelfile.glm-ocr
+#
+# This Modelfile assumes the published 'glm-ocr' image is available locally.
+# If you've downloaded weights from HuggingFace
+# (https://huggingface.co/zai-org/GLM-OCR), substitute the FROM line with
+# a path to a converted GGUF, e.g.:
+#   FROM ./models/glm-ocr/glm-ocr-q4_k_m.gguf
+
+FROM glm-ocr
+
+# Sampling: pure greedy for OCR — eliminates hallucinations
+PARAMETER temperature 0
+PARAMETER top_p 1
+PARAMETER top_k 1
+PARAMETER repeat_penalty 1.0
+
+# Pharma leaflet outputs can be long (tables + warnings + dosage)
+PARAMETER num_predict 4096
+PARAMETER num_ctx 8192
+
+# System prompt biases the model toward structured pharma extraction
+SYSTEM """
+You are an expert OCR engine specialised in pharmaceutical leaflets and
+regulatory submissions. Extract every visible piece of text exactly as
+shown, preserving:
+  - Tables as GitHub-flavoured Markdown tables.
+  - Mathematical and dosage formulas as LaTeX.
+  - Section headings (e.g. INDICATIONS, DOSAGE, CONTRAINDICATIONS).
+  - Unit symbols and brackets exactly as printed (mg, mcg, IU, mL, %).
+Do not translate, summarise, or paraphrase. Output extracted text only.
+"""

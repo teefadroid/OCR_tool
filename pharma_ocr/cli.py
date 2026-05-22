@@ -56,34 +56,46 @@ def _run_pipeline(
     dpi: int = 300,
     confidence: float = 0.85,
 ) -> dict:
-    """Core pipeline runner. Returns result dict."""
+    """Core pipeline runner. Returns result dict.
+
+    Supported formats: 'json' | 'markdown' | 'pdf' | 'both' (json+md) | 'all' (json+md+pdf)
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Stage 1
+    # Stage 1: Ingestion
     preprocessor = DocumentPreprocessor(dpi=dpi)
     pages = preprocessor.process(input_path)
 
-    # Stage 2
+    # Stage 2: Layout
     layout = LayoutAnalyzer(mode="ollama", ollama_url=ollama_url)
     all_regions = []
     for page in pages:
         all_regions.extend(layout.analyze(page))
 
-    # Stage 3
+    # Stage 3: Dual-model OCR
     router = OCRRouter(ollama_url=ollama_url)
     all_regions = router.process_regions(all_regions)
 
-    # Stage 4
+    # Stage 4: Post-processing
     postprocessor = PostProcessor(confidence_threshold=confidence)
     result = postprocessor.process(all_regions, source_file=str(input_path))
 
-    # Stage 5
+    # Stage 5: Export
     json_exp = JSONExporter(output_dir)
-    json_path = json_exp.export(result)
+    json_exp.export(result)
 
-    if fmt in ("markdown", "both"):
+    if fmt in ("markdown", "both", "all"):
         md_exp = MarkdownExporter(output_dir)
         md_exp.export(result)
+
+    if fmt in ("pdf", "all") and input_path.suffix.lower() == ".pdf":
+        pdf_exp = PDFOverlay(output_dir)
+        # Group regions by page number for the overlay stage
+        regions_per_page: dict[int, list] = {}
+        for r in all_regions:
+            page_num = r.metadata.get("page", 1)
+            regions_per_page.setdefault(page_num, []).append(r)
+        pdf_exp.create_searchable_pdf(input_path, regions_per_page)
 
     return json_exp.to_dict(result)
 
@@ -93,7 +105,7 @@ if _RICH:
     def process(
         input: Path = typer.Option(..., "--input", "-i", help="PDF or image file"),
         output: Path = typer.Option(Path("./output"), "--output", "-o", help="Output directory"),
-        format: str = typer.Option("json", "--format", "-f", help="json | markdown | both"),
+        format: str = typer.Option("json", "--format", "-f", help="json | markdown | pdf | both | all"),
         ollama_url: str = typer.Option("http://localhost:11434", help="Ollama server URL"),
         dpi: int = typer.Option(300, help="DPI for PDF rendering"),
         confidence: float = typer.Option(0.85, help="Confidence threshold for QC flags"),
@@ -114,8 +126,18 @@ if _RICH:
         t.add_row("Source", str(input))
         t.add_row("Pages", str(result.get("pages_processed", 0)))
         t.add_row("INN Matches", str(len(result.get("inn_matches", []))))
-        t.add_row("Strengths Found", str(len(result.get("text_content", {}).get("combined", ""))))
-        t.add_row("Regions for Review", str(len(result.get("ocr_metadata", {}).get("regions_flagged_for_review", []))))
+        t.add_row(
+            "Strengths Found",
+            str(len(result.get("drug_info", {}).get("all_strengths", []))),
+        )
+        t.add_row(
+            "Combined Text Chars",
+            str(len(result.get("text_content", {}).get("combined", ""))),
+        )
+        t.add_row(
+            "Regions for Review",
+            str(len(result.get("ocr_metadata", {}).get("regions_flagged_for_review", []))),
+        )
         console.print(t)
         console.print(f"[green]✓ Output written to:[/green] {output}")
 

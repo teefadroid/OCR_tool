@@ -45,16 +45,20 @@ pip install -r requirements.txt
 
 # 2. Pull models via Ollama
 ollama pull glm-ocr
-# Arabic model loaded via HuggingFace (see docs/setup.md)
+# Arabic model loaded via HuggingFace + custom Modelfile (see docs/setup.md)
+ollama create arabic-glm-ocr -f ollama/Modelfile.arabic-glm-ocr
 
 # 3. Run on a single leaflet
 python -m pharma_ocr.cli process --input leaflet.pdf --output ./output
 
-# 4. Start the API server
+# 4. Generate searchable PDF + JSON + Markdown in one go
+python -m pharma_ocr.cli process --input leaflet.pdf --output ./output --format all
+
+# 5. Start the API server
 uvicorn pharma_ocr.api.app:app --host 0.0.0.0 --port 8000
 
-# 5. Open review UI (Next.js)
-cd frontend && npm install && npm run dev
+# 6. Run the test suite
+pytest tests/ -v
 ```
 
 ## Project Structure
@@ -65,15 +69,44 @@ pharma_ocr/
 ├── layout/           # PP-DocLayout region detection
 ├── ocr/              # Dual-model routing (EN + AR)
 ├── postprocessing/   # BiDi, numerals, INN matching
-├── output/           # JSON/Markdown/PDF export
+├── output/           # JSON / Markdown / Searchable PDF export
+├── storage/          # SQLite audit log + persistent job store (Stage 6)
 ├── api/              # FastAPI service
 └── cli.py            # Command-line interface
-frontend/             # Next.js review UI
+ollama/               # Modelfile templates for ollama create
+tests/                # Unit tests for deterministic post-processing logic
 data/
 ├── inn_list/         # WHO INN reference data
 └── samples/          # Test leaflets
 docs/                 # Setup and usage guides
 ```
+
+## API Endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET`  | `/ocr/health`                          | Both models reachable via Ollama? |
+| `POST` | `/ocr/process`                         | Upload a PDF/image, run full pipeline |
+| `GET`  | `/ocr/result/{job_id}`                 | Fetch a stored result |
+| `GET`  | `/ocr/result/{job_id}/searchable.pdf`  | Download the searchable PDF for a job |
+| `GET`  | `/ocr/jobs?limit=50`                   | List recent jobs |
+| `GET`  | `/ocr/audit/{job_id}`                  | Full audit trail (regulatory compliance) |
+| `POST` | `/ocr/review/{job_id}`                 | Record a QC reviewer decision |
+
+## Configuration
+
+The API server is configured via environment variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PHARMOCR_OLLAMA_URL`     | `http://localhost:11434` | Ollama endpoint |
+| `PHARMOCR_OUTPUT_DIR`     | `./api_output`           | Where exports are written |
+| `PHARMOCR_AUDIT_DB`       | `./pharma_ocr_audit.sqlite3` | Audit log SQLite path |
+| `PHARMOCR_CORS_ORIGINS`   | `http://localhost:3000,http://localhost:3001` | Allowed origins |
+
+For production with Neon Postgres, swap the `AuditStore` connection layer
+for `psycopg`/`asyncpg`. The schema in `pharma_ocr/storage/audit.py` is
+already Postgres-compatible.
 
 ## Models Used
 

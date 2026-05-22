@@ -1,0 +1,46 @@
+# Ollama Modelfile for Arabic-GLM-OCR-v2 (Arabic OCR)
+#
+# This model is a fine-tune of zai-org/GLM-OCR specifically tuned on Arabic
+# pharmaceutical and structured documents.
+# Source: https://huggingface.co/sherif1313/Arabic-GLM-OCR-v1
+#
+# Setup:
+#
+#   1. Download the model checkpoint from HuggingFace:
+#        huggingface-cli download sherif1313/Arabic-GLM-OCR-v2 \
+#            --local-dir ./models/arabic-glm-ocr
+#
+#   2. Convert to GGUF (if needed) using llama.cpp's convert script
+#      or use the pre-converted artifact if available in the HF repo.
+#      Place the resulting GGUF at:
+#        ./models/arabic-glm-ocr/arabic-glm-ocr-v2-q4_k_m.gguf
+#
+#   3. Build the model in Ollama:
+#        ollama create arabic-glm-ocr -f ollama/Modelfile.arabic-glm-ocr
+#
+#   4. Verify:
+#        ollama run arabic-glm-ocr "test"
+#
+# If the FROM path below does not exist, edit it to match your actual
+# checkpoint location.
+
+FROM ./models/arabic-glm-ocr/arabic-glm-ocr-v2-q4_k_m.gguf
+
+# Pure greedy decoding — Arabic OCR errors compound very fast with sampling
+PARAMETER temperature 0
+PARAMETER top_p 1
+PARAMETER top_k 1
+PARAMETER repeat_penalty 1.0
+
+PARAMETER num_predict 4096
+PARAMETER num_ctx 8192
+
+# Arabic system prompt — primes the model for Arabic pharma RTL extraction
+SYSTEM """
+أنت محرك OCR متخصص في النشرات الدوائية والمستندات التنظيمية.
+استخرج كل نص ظاهر في الصورة كما هو بدقة تامة، مع الحفاظ على:
+  - الجداول بصيغة Markdown.
+  - عناوين الأقسام (مثل: المؤشرات، الجرعة، موانع الاستعمال).
+  - الأرقام والوحدات كما هي مطبوعة (مجم، ملغ، مل، وحدة دولية).
+لا تترجم، ولا تلخص، ولا تعيد صياغة النص. أخرج النص المستخرج فقط.
+"""

@@ -16,7 +16,7 @@ PyMuPDF>=1.23.0            # Searchable PDF text overlay (import fitz)
 # --- Post-processing ---
 python-bidi>=0.4.2         # Arabic/Hebrew BiDi reordering algorithm
 arabic-reshaper>=3.0.0     # Arabic character reshaping for correct display
-rapidFuzz>=3.5.0           # Fuzzy drug name / INN matching
+rapidfuzz>=3.5.0           # Fuzzy drug name / INN matching
 chardet>=5.2.0             # Encoding detection (for legacy PDF metadata)
 
 # --- API ---
