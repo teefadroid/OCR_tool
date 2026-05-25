@@ -2,10 +2,16 @@
 Stage 3: Dual-Model OCR Router
 
 Routes each layout region to the correct OCR model:
-  - Arabic regions   → ArabicGLMClient (Arabic-GLM-OCR-v2)
-  - Latin regions    → GLMOCRClient    (GLM-OCR base)
-  - Mixed regions    → Both models in parallel; higher confidence wins
-                       for each field; results merged.
+  - Arabic regions   -> ArabicGLMClient (Arabic-GLM-OCR-v2)
+  - Latin regions    -> GLMOCRClient    (GLM-OCR base)
+  - Mixed regions    -> Both models in parallel; higher confidence wins
+                        for each field; results merged.
+
+Single-model optimisation:
+  When en_model == ar_model (single-model fallback mode), the router
+  collapses to one OCR call per region instead of two. This is critical
+  for performance since calling the same Ollama model twice in parallel
+  serialises internally and just doubles wall-time.
 
 Key design decisions:
   - Parallel execution for mixed regions using ThreadPoolExecutor
@@ -16,14 +22,12 @@ Key design decisions:
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from typing import List
 
-import numpy as np
-
 from ..layout.analyzer import Region
-from .glm_client import GLMOCRClient
 from .arabic_client import ArabicGLMClient
+from .glm_client import GLMOCRClient
 
 logger = logging.getLogger(__name__)
 
@@ -40,45 +44,79 @@ class OCRRouter:
         ar_model: str = "arabic-glm-ocr",
         max_workers: int = 2,
     ):
+        self.en_model = en_model
+        self.ar_model = ar_model
+        self.single_model_mode = en_model == ar_model
         self.en_client = GLMOCRClient(ollama_url=ollama_url, model=en_model)
+        # In single-model mode we still build the Arabic client (for its
+        # Arabic-specific prompt + retry fallback) but we point it at the
+        # same model name. This keeps behaviour consistent for Arabic
+        # regions without making redundant Ollama calls.
         self.ar_client = ArabicGLMClient(ollama_url=ollama_url, model=ar_model)
         self.max_workers = max_workers
+
+        if self.single_model_mode:
+            logger.info(
+                "Router in single-model mode: '%s' for both languages "
+                "(mixed regions will be OCR'd once instead of twice)",
+                en_model,
+            )
 
     def process_regions(self, regions: List[Region]) -> List[Region]:
         """
         Process a list of layout regions, assigning OCR text to each.
-        Mixed regions are processed with both models in parallel.
+        Mixed regions are processed with both models in parallel (or once
+        if running in single-model mode).
 
         Returns the same list of regions with .text and .confidence populated.
         """
-        # Separate mixed regions for parallel processing
         latin_regions = [r for r in regions if r.script == "latin"]
         arabic_regions = [r for r in regions if r.script == "arabic"]
         mixed_regions = [r for r in regions if r.script == "mixed"]
 
         logger.info(
             "Routing %d latin | %d arabic | %d mixed regions",
-            len(latin_regions), len(arabic_regions), len(mixed_regions)
+            len(latin_regions), len(arabic_regions), len(mixed_regions),
         )
 
-        # Sequential for single-script regions
         for region in latin_regions:
             self._run_ocr(region, self.en_client, "en")
 
         for region in arabic_regions:
             self._run_ocr(region, self.ar_client, "ar")
 
-        # Parallel for mixed regions
         if mixed_regions:
-            self._process_mixed_parallel(mixed_regions)
+            if self.single_model_mode:
+                # Single model: one call per region, use the Arabic client's
+                # logic since it has the Arabic-prompt-then-English-fallback
+                # behaviour which works for both scripts.
+                for region in mixed_regions:
+                    self._run_ocr(region, self.ar_client, "mixed")
+            else:
+                self._process_mixed_parallel(mixed_regions)
 
         return regions
 
+    def warmup(self) -> dict:
+        """
+        Pre-load both models into VRAM. Returns a dict per model.
+
+        In single-model mode, only warms up once. Useful as a first step
+        on a fresh Ollama install where cold start can take 60-120 s.
+        """
+        results = {}
+        results[self.en_model] = self.en_client.warmup()
+        if not self.single_model_mode:
+            results[self.ar_model] = self.ar_client.warmup()
+        return results
+
     def health_check(self) -> dict:
-        """Check availability of both models."""
+        """Check availability of both models (or just one in single-model mode)."""
+        if self.single_model_mode:
+            return {self.en_model: self.en_client.health_check()}
         return {
-            "glm_ocr_base": self.en_client.health_check(),
-            "arabic_glm_ocr": self.ar_client.health_check(),
+            self.en_model: self.en_client.health_check(),
+            self.ar_model: self.ar_client.health_check(),
         }
 
     # ------------------------------------------------------------------
@@ -97,6 +135,8 @@ class OCRRouter:
             region.confidence = result.get("confidence", 0.0)
             region.metadata["ocr_model"] = result.get("model", lang)
             region.metadata["ocr_lang"] = lang
+            if result.get("elapsed_s") is not None:
+                region.metadata["ocr_elapsed_s"] = round(result["elapsed_s"], 2)
         except Exception as exc:
             logger.error("OCR failed for region %d: %s", region.region_id, exc)
             region.text = ""
@@ -113,10 +153,13 @@ class OCRRouter:
                 f_ar = executor.submit(self.ar_client.ocr, region.image)
                 futures[region.region_id] = (region, f_en, f_ar)
 
+            # Future timeout: a generous multiple of the client timeout.
+            future_timeout = max(self.en_client.timeout, self.ar_client.timeout) + 60
+
             for region_id, (region, f_en, f_ar) in futures.items():
                 try:
-                    en_result = f_en.result(timeout=180)
-                    ar_result = f_ar.result(timeout=180)
+                    en_result = f_en.result(timeout=future_timeout)
+                    ar_result = f_ar.result(timeout=future_timeout)
                     merged = self._merge_results(en_result, ar_result)
                     region.text = merged["text"]
                     region.confidence = merged["confidence"]

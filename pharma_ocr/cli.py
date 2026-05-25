@@ -183,6 +183,36 @@ if _RICH:
             raise typer.Exit(1)
 
     @app.command()
+    def warmup(
+        ollama_url: str = typer.Option("http://localhost:11434", help="Ollama server URL"),
+        en_model: str = typer.Option("glm-ocr"),
+        ar_model: str = typer.Option("arabic-glm-ocr"),
+    ):
+        """Pre-load OCR models into VRAM (eliminates first-request cold start).
+
+        Run this once after `ollama serve` is up so your first real
+        document doesn't time out on model load. Cold start can take
+        60-120 s on consumer hardware; subsequent requests are fast.
+        """
+        console.print(
+            f"[bold]Warming up:[/bold] [cyan]{en_model}[/cyan]"
+            + (f" + [cyan]{ar_model}[/cyan]" if en_model != ar_model else " (single-model mode)")
+        )
+        router = OCRRouter(ollama_url=ollama_url, en_model=en_model, ar_model=ar_model)
+        results = router.warmup()
+        for model, ok in results.items():
+            icon = "[green]✓[/green]" if ok else "[red]✗[/red]"
+            console.print(f"  {icon} {model}: {'loaded' if ok else 'FAILED'}")
+        if not all(results.values()):
+            console.print(
+                "[yellow]One or more warmups failed.[/yellow] Check that:\n"
+                "  - Ollama is running: [bold]curl http://localhost:11434/api/tags[/bold]\n"
+                "  - The model is pulled: [bold]ollama pull glm-ocr[/bold]\n"
+                "  - For very slow machines, set [bold]PHARMOCR_OCR_TIMEOUT=900[/bold]"
+            )
+            raise typer.Exit(1)
+
+    @app.command()
     def batch(
         input_dir: Path = typer.Option(..., "--input-dir", help="Folder of PDF/image files"),
         output: Path = typer.Option(Path("./output"), "--output", "-o"),
