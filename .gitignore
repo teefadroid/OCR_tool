@@ -1,0 +1,68 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.installed.cfg
+*.egg
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- IDE / editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# --- PharmOCR runtime artefacts ---
+output/
+api_output/
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+
+# --- Model weights (large; downloaded by user, not committed) ---
+models/
+*.gguf
+*.safetensors
+*.bin
+
+# --- WHO INN list (downloaded separately, not committed) ---
+data/inn_list/who_inn.csv
+data/inn_list/who_inn.json
+data/inn_list/who_inn.txt
+
+# --- Sample leaflets containing PII / regulatory data ---
+data/samples/*.pdf
+data/samples/*.png
+data/samples/*.jpg
+data/samples/*.jpeg
+data/samples/*.tif
+data/samples/*.tiff
+
+# --- Logs ---
+*.log
+logs/
+
+# --- OS ---
+Thumbs.db
+ehthumbs.db

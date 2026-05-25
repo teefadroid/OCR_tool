@@ -48,21 +48,31 @@ class ArabicGLMClient(GLMOCRClient):
         self,
         ollama_url: str = "http://localhost:11434",
         model: str = DEFAULT_MODEL,
-        timeout: int = 150,
+        timeout: Optional[int] = None,
+        max_image_dim: Optional[int] = None,
         use_english_prompt_fallback: bool = True,
     ):
-        super().__init__(ollama_url=ollama_url, model=model, timeout=timeout)
+        super().__init__(
+            ollama_url=ollama_url,
+            model=model,
+            timeout=timeout,
+            max_image_dim=max_image_dim,
+        )
         self.use_english_prompt_fallback = use_english_prompt_fallback
 
     def ocr(self, image: np.ndarray, prompt: Optional[str] = None) -> dict:
         """
-        Run Arabic OCR. Falls back to English prompt if Arabic prompt
-        causes encoding issues with the running Ollama version.
+        Run Arabic OCR. Falls back to English prompt only if the Arabic
+        prompt yielded an empty response AND the call did not error out
+        (so we don't waste another timeout on a model that's already failing).
         """
         result = super().ocr(image, prompt=prompt or self.DEFAULT_PROMPT)
 
-        # If result is empty and we have a fallback, retry with English prompt
-        if not result.get("text") and self.use_english_prompt_fallback:
+        if (
+            not result.get("text")
+            and self.use_english_prompt_fallback
+            and not result.get("error")
+        ):
             logger.info("Arabic prompt yielded no text; retrying with English fallback prompt")
             result = super().ocr(image, prompt=self.FALLBACK_ENGLISH_PROMPT)
             result["prompt_fallback_used"] = True
@@ -74,11 +84,8 @@ class ArabicGLMClient(GLMOCRClient):
         available = super().health_check()
         if not available:
             logger.warning(
-                "Arabic-GLM-OCR model not found in Ollama.\n"
-                "Setup instructions:\n"
-                "  1. Download model from HuggingFace:\n"
-                "     huggingface-cli download sherif1313/Arabic-GLM-OCR-v1\n"
-                "  2. Create an Ollama Modelfile (see docs/setup.md)\n"
-                "  3. Run: ollama create arabic-glm-ocr -f Modelfile"
+                "Arabic-GLM-OCR model not found in Ollama. See docs/setup.md "
+                "for the three working options (single-model fallback, "
+                "HuggingFace transformers, or llama.cpp llama-server)."
             )
         return available
