@@ -1,30 +1,54 @@
-# Ollama Modelfile for Arabic-GLM-OCR-v2 (Arabic OCR)
+# Ollama Modelfile for Arabic-GLM-OCR-v2
 #
-# This model is a fine-tune of zai-org/GLM-OCR specifically tuned on Arabic
-# pharmaceutical and structured documents.
-# Source: https://huggingface.co/sherif1313/Arabic-GLM-OCR-v1
+# ============================================================================
+#  IMPORTANT — KNOWN OLLAMA LIMITATION FOR THIS MODEL
+# ============================================================================
 #
-# Setup:
+# Arabic-GLM-OCR-v2 is a vision-language model (it sees images and emits text).
+# Ollama's Modelfile syntax does NOT support attaching a separate vision
+# projector ("mmproj") to a custom GGUF, so even if you import the
+# community-converted GGUF, the resulting Ollama model will lack vision
+# capability and OCR will not work. See:
+#   https://github.com/ollama/ollama/issues/9967
+#   https://github.com/ollama/ollama/blob/main/docs/modelfile.mdx
 #
-#   1. Download the model checkpoint from HuggingFace:
-#        huggingface-cli download sherif1313/Arabic-GLM-OCR-v2 \
-#            --local-dir ./models/arabic-glm-ocr
+# Three working options for running the Arabic model on Windows / Linux:
 #
-#   2. Convert to GGUF (if needed) using llama.cpp's convert script
-#      or use the pre-converted artifact if available in the HF repo.
-#      Place the resulting GGUF at:
-#        ./models/arabic-glm-ocr/arabic-glm-ocr-v2-q4_k_m.gguf
+#   1. Single-model fallback (immediate, no extra setup):
+#        - Use the registry 'glm-ocr' model for both languages.
+#        - Run:
+#            python -m pharma_ocr.cli process --input file.pdf \
+#                --ar-model glm-ocr --en-model glm-ocr
+#        - Or, for the API server:
+#            set PHARMOCR_AR_MODEL=glm-ocr        (PowerShell: $env:PHARMOCR_AR_MODEL = "glm-ocr")
+#        - Trade-off: lower Arabic accuracy than the fine-tune, but works today.
 #
-#   3. Build the model in Ollama:
-#        ollama create arabic-glm-ocr -f ollama/Modelfile.arabic-glm-ocr
+#   2. Hugging Face transformers backend (high-accuracy Arabic):
+#        - Install: pip install torch torchvision transformers accelerate
+#        - Set PHARMOCR_AR_BACKEND=hf and download safetensors from:
+#            huggingface-cli download sherif1313/Arabic-GLM-OCR-v2 \
+#                --local-dir ./models/arabic-glm-ocr
+#        - The Arabic client will load the model in-process via transformers,
+#          bypassing Ollama entirely for this language.
 #
-#   4. Verify:
-#        ollama run arabic-glm-ocr "test"
+#   3. llama-server (llama.cpp) for the Arabic model:
+#        - Download both the language GGUF and the mmproj from
+#            https://huggingface.co/Makadi86/Arabic-GLM-OCR-v2-GGUF
+#        - Run: llama-server -m arabic-glm-ocr-v2-fixed.gguf \
+#                            --mmproj mmproj-arabic-glm-ocr-v2.gguf --port 8080
+#        - Set PHARMOCR_AR_BACKEND=llamacpp and PHARMOCR_AR_URL=http://localhost:8080
 #
-# If the FROM path below does not exist, edit it to match your actual
-# checkpoint location.
+# This Modelfile remains in the repo as a placeholder for the day Ollama
+# supports custom vision GGUFs. Until then, prefer options (1)–(3) above.
+#
+# ============================================================================
+#
+# If you still want to attempt the import (it will succeed but the resulting
+# model will lack vision), edit the FROM line below to point to your local
+# GGUF and run:
+#   ollama create arabic-glm-ocr -f ollama/Modelfile.arabic-glm-ocr
 
-FROM ./models/arabic-glm-ocr/arabic-glm-ocr-v2-q4_k_m.gguf
+FROM ./models/arabic-glm-ocr/arabic-glm-ocr-v2-fixed.gguf
 
 # Pure greedy decoding — Arabic OCR errors compound very fast with sampling
 PARAMETER temperature 0

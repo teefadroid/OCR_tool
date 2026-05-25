@@ -64,10 +64,14 @@ app.add_middleware(
 _OUTPUT_DIR = Path(os.getenv("PHARMOCR_OUTPUT_DIR", "./api_output"))
 _DB_PATH = os.getenv("PHARMOCR_AUDIT_DB", "./pharma_ocr_audit.sqlite3")
 _OLLAMA_URL = os.getenv("PHARMOCR_OLLAMA_URL", "http://localhost:11434")
+_EN_MODEL = os.getenv("PHARMOCR_EN_MODEL", "glm-ocr")
+# Set PHARMOCR_AR_MODEL=glm-ocr to fall back to single-model mode when
+# the Arabic fine-tune isn't available locally (see docs/setup.md).
+_AR_MODEL = os.getenv("PHARMOCR_AR_MODEL", "arabic-glm-ocr")
 
 _preprocessor = DocumentPreprocessor(dpi=300)
 _layout = LayoutAnalyzer(mode="ollama", ollama_url=_OLLAMA_URL)
-_router = OCRRouter(ollama_url=_OLLAMA_URL)
+_router = OCRRouter(ollama_url=_OLLAMA_URL, en_model=_EN_MODEL, ar_model=_AR_MODEL)
 _json_exporter = JSONExporter(output_dir=_OUTPUT_DIR)
 _md_exporter = MarkdownExporter(output_dir=_OUTPUT_DIR)
 _pdf_overlay = PDFOverlay(output_dir=_OUTPUT_DIR)

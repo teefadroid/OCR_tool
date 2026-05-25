@@ -47,29 +47,97 @@ ollama create glm-ocr-pharma -f ollama/Modelfile.glm-ocr
 # then run with: --en-model glm-ocr-pharma
 ```
 
-### Arabic-GLM-OCR-v2 (Hugging Face)
+### Arabic-GLM-OCR-v2 — known Ollama limitation
 
-The Arabic model is not yet in the Ollama registry. Build it locally:
+The Arabic fine-tune is **not** in the Ollama registry, and Ollama's
+Modelfile does not currently support attaching a vision projector
+(`mmproj`) to a custom GGUF
+([ollama/ollama#9967](https://github.com/ollama/ollama/issues/9967)).
+That means even if you import the community-converted GGUF
+([Makadi86/Arabic-GLM-OCR-v2-GGUF](https://huggingface.co/Makadi86/Arabic-GLM-OCR-v2-GGUF)),
+the resulting Ollama model has no vision capability and OCR will fail.
+
+If you saw this error:
+
+```
+Error: 400 Bad Request: invalid model name
+```
+
+it means the `FROM` path in the Modelfile resolved to a missing file and
+Ollama tried to interpret the path as a registry name. Even after fixing
+the path the resulting model will not work for OCR (see the limitation
+above).
+
+Three working options:
+
+#### Option 1 — single-model fallback (recommended for first-run validation)
+
+Use the registry `glm-ocr` model for both languages. The base GLM-OCR
+has some Arabic capability — lower accuracy than the fine-tune but
+sufficient to validate the rest of the pipeline today, with zero extra
+setup.
 
 ```bash
-# 1. Download model from HuggingFace
-pip install huggingface_hub
+ollama pull glm-ocr
+
+# CLI
+python -m pharma_ocr.cli process --input leaflet.pdf \
+    --en-model glm-ocr --ar-model glm-ocr
+
+# API server (Linux/macOS)
+export PHARMOCR_AR_MODEL=glm-ocr
+uvicorn pharma_ocr.api.app:app --port 8000
+
+# API server (Windows PowerShell)
+$env:PHARMOCR_AR_MODEL = "glm-ocr"
+uvicorn pharma_ocr.api.app:app --port 8000
+```
+
+The CLI will print a yellow "running in single-model mode" notice so
+you know which configuration is in effect.
+
+#### Option 2 — HuggingFace transformers (high-accuracy Arabic)
+
+Run the Arabic model in-process via `transformers`, bypassing Ollama
+entirely for that language. Adds ~3 GB of dependencies but gets you
+full Arabic OCR accuracy:
+
+```bash
+pip install torch torchvision transformers accelerate
 huggingface-cli download sherif1313/Arabic-GLM-OCR-v2 \
     --local-dir ./models/arabic-glm-ocr
 
-# 2. (If only safetensors are published) convert to GGUF using llama.cpp:
-#    python convert.py ./models/arabic-glm-ocr --outtype q4_k_m
-
-# 3. Build the Ollama model from the bundled Modelfile
-ollama create arabic-glm-ocr -f ollama/Modelfile.arabic-glm-ocr
-
-# 4. Verify
-ollama run arabic-glm-ocr "صورة اختبار"
+# Future flag — implementation pending; tracked as a follow-up:
+# export PHARMOCR_AR_BACKEND=hf
 ```
 
-The bundled `ollama/Modelfile.arabic-glm-ocr` already contains an Arabic
-system prompt and OCR-tuned sampling parameters (`temperature=0`,
-`top_k=1`).
+> Status: requires a small `arabic_hf_client.py` adapter in
+> `pharma_ocr/ocr/`. Not in the current release; let us know if you
+> want it prioritised.
+
+#### Option 3 — llama-server (llama.cpp) for the Arabic model
+
+`llama.cpp` natively supports `--mmproj`. Run the Arabic model on a
+separate port and point PharmOCR at it:
+
+```bash
+# Download both files (1.35 GB + ~600 MB)
+huggingface-cli download Makadi86/Arabic-GLM-OCR-v2-GGUF \
+    --local-dir ./models/arabic-glm-ocr-gguf
+
+# Build llama.cpp (or grab a release binary)
+git clone https://github.com/ggerganov/llama.cpp.git
+cd llama.cpp && cmake -B build -DGGML_CUDA=ON && cmake --build build -j
+
+# Serve on port 8080 with vision
+./build/bin/llama-server \
+    -m ../models/arabic-glm-ocr-gguf/arabic-glm-ocr-v2-fixed.gguf \
+    --mmproj ../models/arabic-glm-ocr-gguf/mmproj-arabic-glm-ocr-v2.gguf \
+    --port 8080
+```
+
+> Status: requires a small `arabic_llamacpp_client.py` adapter; tracked
+> as a follow-up in the same way as Option 2.
 
 ## 4. Add the WHO INN List
 
@@ -99,6 +167,8 @@ Interactive API docs: <http://localhost:8000/docs>
 | `PHARMOCR_OUTPUT_DIR`   | `./api_output`                  | Where exports are written |
 | `PHARMOCR_AUDIT_DB`     | `./pharma_ocr_audit.sqlite3`    | Audit DB file (SQLite) |
 | `PHARMOCR_CORS_ORIGINS` | `http://localhost:3000,http://localhost:3001` | CSV of allowed origins |
+| `PHARMOCR_EN_MODEL`     | `glm-ocr`                       | Latin/English OCR model name in Ollama |
+| `PHARMOCR_AR_MODEL`     | `arabic-glm-ocr`                | Arabic OCR model name. Set to `glm-ocr` for single-model fallback (see "Arabic-GLM-OCR-v2 — known Ollama limitation" below). |
 
 ## 6. CLI usage
 

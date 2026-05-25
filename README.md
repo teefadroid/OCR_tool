@@ -103,6 +103,8 @@ The API server is configured via environment variables:
 | `PHARMOCR_OUTPUT_DIR`     | `./api_output`           | Where exports are written |
 | `PHARMOCR_AUDIT_DB`       | `./pharma_ocr_audit.sqlite3` | Audit log SQLite path |
 | `PHARMOCR_CORS_ORIGINS`   | `http://localhost:3000,http://localhost:3001` | Allowed origins |
+| `PHARMOCR_EN_MODEL`       | `glm-ocr`                    | English OCR model name |
+| `PHARMOCR_AR_MODEL`       | `arabic-glm-ocr`             | Arabic model; set to `glm-ocr` for single-model fallback (see [setup.md](docs/setup.md)) |
 
 For production with Neon Postgres, swap the `AuditStore` connection layer
 for `psycopg`/`asyncpg`. The schema in `pharma_ocr/storage/audit.py` is
